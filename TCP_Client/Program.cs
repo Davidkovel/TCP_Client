@@ -6,6 +6,46 @@ using System.Text;
 
 namespace TCP_Client;
 
+public class ServerLogger
+{
+    private readonly object _lock = new object();
+
+    public void LogClientActivity(IPEndPoint client, string action, string details = null)
+    {
+        lock (_lock)
+        {
+            string logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] CLIENT {client} - {action}";
+            if (!string.IsNullOrEmpty(details))
+            {
+                logEntry += $" | {details}";
+            }
+
+            Console.WriteLine(logEntry);
+        }
+    }
+
+    public void LogRequest(IPEndPoint client, string request, string response)
+    {
+        lock (_lock)
+        {
+            Console.WriteLine(
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] REQUEST from {client} | '{request}' -> '{response}'");
+        }
+    }
+
+    public void LogError(string errorMessage, Exception ex = null)
+    {
+        lock (_lock)
+        {
+            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ERROR: {errorMessage}");
+            if (ex != null)
+            {
+                Console.WriteLine($"Exception: {ex}");
+            }
+        }
+    }
+}
+
 class UdpPriceServer
 {
     private static readonly Dictionary<string, decimal> _prices =
@@ -23,10 +63,12 @@ class UdpPriceServer
     private static readonly ClientManager _clientManager =
         new ClientManager(maxClients: 5, clientTimeout: TimeSpan.FromMinutes(10));
 
+    private static readonly ServerLogger _logger = new ServerLogger();
+
     static void Main(string[] args)
     {
         UdpClient udpServer = new UdpClient(Port);
-        Console.WriteLine($"Server started. Waiting for connections...");
+        _logger.LogClientActivity(null, "SERVER_START", $"Port: {Port}");
 
 
         Thread cleanupThread = new Thread(_clientManager.CleanupInactiveClients);
@@ -62,10 +104,12 @@ class UdpPriceServer
                 if (_prices.TryGetValue(componentName, out decimal price))
                 {
                     response = $"Name: {componentName}: {price}$";
+                    _logger.LogRequest(clientEndPoint, componentName, response);
                 }
                 else
                 {
                     response = $"Does not exists '{componentName}'";
+                    _logger.LogRequest(clientEndPoint, componentName, response);
                 }
 
                 byte[] responseData = Encoding.UTF8.GetBytes(response);
@@ -74,11 +118,12 @@ class UdpPriceServer
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"ERROR: {ex.Message}");
+            _logger.LogError("Server error", ex);
         }
         finally
         {
             udpServer.Close();
+            _logger.LogClientActivity(null, "SERVER_STOP");
         }
     }
 }
